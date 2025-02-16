@@ -30,13 +30,15 @@ jobs:
         
     - name: Check for new version
       id: version_check
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         chmod +x .github/scripts/version_check.sh
         # Force build if triggered manually
         if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-          ./.github/scripts/version_check.sh true
+          ./.github/scripts/version_check.sh true "$GITHUB_TOKEN"
         else
-          ./.github/scripts/version_check.sh
+          ./.github/scripts/version_check.sh false "$GITHUB_TOKEN"
         fi
         
     - name: Setup Python
