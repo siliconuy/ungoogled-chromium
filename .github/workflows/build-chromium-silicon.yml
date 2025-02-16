@@ -16,9 +16,17 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
       
+    - name: Checkout Ungoogled Chromium
+      uses: actions/checkout@v4
+      with:
+        repository: ungoogled-software/ungoogled-chromium
+        path: ungoogled-chromium
+        
     - name: Install dependencies
       run: |
+        echo "Installing build dependencies..."
         brew install jq ninja
+        brew list jq ninja
         
     - name: Check for new version
       id: version_check
@@ -37,17 +45,31 @@ jobs:
       with:
         python-version: '3.11'
         
+    - name: Verify Python Setup
+      if: steps.version_check.outputs.new_version == 'true'
+      run: |
+        python3 --version
+        pip3 --version
+        
     - name: Setup build environment
       if: steps.version_check.outputs.new_version == 'true'
       run: |
-        # Install build dependencies
+        echo "Setting up build environment..."
         python3 -m pip install --user depot_tools
-        echo 'export PATH="$PATH:$HOME/depot_tools"' >> $GITHUB_ENV
+        echo "$HOME/depot_tools" >> $GITHUB_PATH
+        
+    - name: Verify build tools
+      if: steps.version_check.outputs.new_version == 'true'
+      run: |
+        echo "Verifying build tools..."
+        which ninja
+        which gn || echo "gn not found"
+        which autoninja || echo "autoninja not found"
         
     - name: Fetch Chromium source
       if: steps.version_check.outputs.new_version == 'true'
       run: |
-        # Clone the specific version
+        echo "Fetching Chromium source version ${{ steps.version_check.outputs.version }}..."
         fetch --nohooks chromium
         cd src
         git checkout ${{ steps.version_check.outputs.version }}
@@ -56,22 +78,24 @@ jobs:
     - name: Apply Ungoogled Chromium patches
       if: steps.version_check.outputs.new_version == 'true'
       run: |
-        # Apply the ungoogled-chromium patches
+        echo "Applying Ungoogled Chromium patches..."
+        cp -r ungoogled-chromium/* src/
+        cd src
         python3 utils/apply_patches.py
         
     - name: Build Chromium
       if: steps.version_check.outputs.new_version == 'true'
       run: |
+        echo "Building Chromium for Apple Silicon..."
         cd src
-        # Configure build for Apple Silicon
         gn gen out/Default --args='target_cpu="arm64" is_debug=false enable_nacl=false use_system_xcode=true'
         autoninja -C out/Default chrome
         
     - name: Create DMG
       if: steps.version_check.outputs.new_version == 'true'
       run: |
+        echo "Creating DMG package..."
         cd src
-        # Package the app into DMG
         chrome/installer/mac/pkg-dmg \
           --source out/Default/Chromium.app \
           --target "ungoogled-chromium-${{ steps.version_check.outputs.version }}-arm64.dmg" \
