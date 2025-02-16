@@ -24,7 +24,12 @@ jobs:
       id: version_check
       run: |
         chmod +x .github/scripts/version_check.sh
-        ./.github/scripts/version_check.sh
+        # Force build if triggered manually
+        if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          ./.github/scripts/version_check.sh true
+        else
+          ./.github/scripts/version_check.sh
+        fi
         
     - name: Setup Python
       if: steps.version_check.outputs.new_version == 'true'
