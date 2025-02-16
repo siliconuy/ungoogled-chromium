@@ -1,0 +1,92 @@
+name: Build Ungoogled Chromium DMG (Apple Silicon)
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'  # Every 6 hours
+  workflow_dispatch:  # Manual trigger
+  push:
+    branches:
+      - main
+
+jobs:
+  check-and-build:
+    runs-on: macos-14  # Uses macOS 14 runner with Apple Silicon support
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Install dependencies
+      run: |
+        brew install jq ninja
+        
+    - name: Check for new version
+      id: version_check
+      run: |
+        chmod +x .github/scripts/version_check.sh
+        ./.github/scripts/version_check.sh
+        
+    - name: Setup Python
+      if: steps.version_check.outputs.new_version == 'true'
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: Setup build environment
+      if: steps.version_check.outputs.new_version == 'true'
+      run: |
+        # Install build dependencies
+        python3 -m pip install --user depot_tools
+        echo 'export PATH="$PATH:$HOME/depot_tools"' >> $GITHUB_ENV
+        
+    - name: Fetch Chromium source
+      if: steps.version_check.outputs.new_version == 'true'
+      run: |
+        # Clone the specific version
+        fetch --nohooks chromium
+        cd src
+        git checkout ${{ steps.version_check.outputs.version }}
+        gclient sync -D --force --reset
+        
+    - name: Apply Ungoogled Chromium patches
+      if: steps.version_check.outputs.new_version == 'true'
+      run: |
+        # Apply the ungoogled-chromium patches
+        python3 utils/apply_patches.py
+        
+    - name: Build Chromium
+      if: steps.version_check.outputs.new_version == 'true'
+      run: |
+        cd src
+        # Configure build for Apple Silicon
+        gn gen out/Default --args='target_cpu="arm64" is_debug=false enable_nacl=false use_system_xcode=true'
+        autoninja -C out/Default chrome
+        
+    - name: Create DMG
+      if: steps.version_check.outputs.new_version == 'true'
+      run: |
+        cd src
+        # Package the app into DMG
+        chrome/installer/mac/pkg-dmg \
+          --source out/Default/Chromium.app \
+          --target "ungoogled-chromium-${{ steps.version_check.outputs.version }}-arm64.dmg" \
+          --volname "Ungoogled Chromium" \
+          --symlink /Applications
+          
+    - name: Create Release
+      if: steps.version_check.outputs.new_version == 'true'
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ steps.version_check.outputs.version }}
+        name: "Ungoogled Chromium ${{ steps.version_check.outputs.version }} (Apple Silicon)"
+        files: src/ungoogled-chromium-${{ steps.version_check.outputs.version }}-arm64.dmg
+        generate_release_notes: true
+        body: |
+          Ungoogled Chromium ${{ steps.version_check.outputs.version }} built for Apple Silicon (arm64)
+          
+          This is an automated build of Ungoogled Chromium for Apple Silicon Macs.
+          - Built from: ungoogled-software/ungoogled-chromium@${{ steps.version_check.outputs.version }}
+          - Architecture: arm64 (Apple Silicon)
+          - Built on: macOS 14 runner
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
