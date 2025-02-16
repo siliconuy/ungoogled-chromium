@@ -22,11 +22,11 @@ jobs:
         repository: ungoogled-software/ungoogled-chromium
         path: ungoogled-chromium
         
-    - name: Install dependencies
+    - name: Install system dependencies
       run: |
         echo "Installing build dependencies..."
-        brew install jq ninja
-        brew list jq ninja
+        brew install jq ninja cmake pkg-config
+        brew list jq ninja cmake pkg-config
         
     - name: Check for new version
       id: version_check
@@ -51,25 +51,28 @@ jobs:
         python3 --version
         pip3 --version
         
-    - name: Setup build environment
+    - name: Setup depot_tools
       if: steps.version_check.outputs.new_version == 'true'
       run: |
-        echo "Setting up build environment..."
-        python3 -m pip install --user depot_tools
-        echo "$HOME/depot_tools" >> $GITHUB_PATH
+        echo "Setting up depot_tools..."
+        git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
+        echo "$GITHUB_WORKSPACE/depot_tools" >> $GITHUB_PATH
         
     - name: Verify build tools
       if: steps.version_check.outputs.new_version == 'true'
       run: |
         echo "Verifying build tools..."
+        export PATH="$GITHUB_WORKSPACE/depot_tools:$PATH"
         which ninja
         which gn || echo "gn not found"
         which autoninja || echo "autoninja not found"
+        which gclient || echo "gclient not found"
         
     - name: Fetch Chromium source
       if: steps.version_check.outputs.new_version == 'true'
       run: |
         echo "Fetching Chromium source version ${{ steps.version_check.outputs.version }}..."
+        export PATH="$GITHUB_WORKSPACE/depot_tools:$PATH"
         fetch --nohooks chromium
         cd src
         git checkout ${{ steps.version_check.outputs.version }}
@@ -87,6 +90,7 @@ jobs:
       if: steps.version_check.outputs.new_version == 'true'
       run: |
         echo "Building Chromium for Apple Silicon..."
+        export PATH="$GITHUB_WORKSPACE/depot_tools:$PATH"
         cd src
         gn gen out/Default --args='target_cpu="arm64" is_debug=false enable_nacl=false use_system_xcode=true'
         autoninja -C out/Default chrome

@@ -7,11 +7,23 @@ echo "Checking for new version of Ungoogled Chromium..."
 echo "Force build: $FORCE"
 
 # Fetch latest release from original repo
-LATEST_VERSION=$(curl -s https://api.github.com/repos/ungoogled-software/ungoogled-chromium/releases/latest | jq -r .tag_name)
+RESPONSE=$(curl -s https://api.github.com/repos/ungoogled-software/ungoogled-chromium/releases/latest)
+if [ $? -ne 0 ]; then
+    echo "Error: Failed to fetch latest version from API"
+    exit 1
+fi
+
+LATEST_VERSION=$(echo "$RESPONSE" | jq -r '.tag_name')
+if [ "$LATEST_VERSION" = "null" ] || [ -z "$LATEST_VERSION" ]; then
+    echo "Error: Could not determine latest version"
+    echo "API Response: $RESPONSE"
+    exit 1
+fi
 echo "Latest version found: $LATEST_VERSION"
 
 # Check if we already have this version
-LOCAL_VERSION=$(curl -s https://api.github.com/repos/siliconuy/ungoogled-chromium/releases/latest | jq -r .tag_name || echo "none")
+LOCAL_RESPONSE=$(curl -s https://api.github.com/repos/siliconuy/ungoogled-chromium/releases/latest)
+LOCAL_VERSION=$(echo "$LOCAL_RESPONSE" | jq -r '.tag_name // "none"')
 echo "Local version found: $LOCAL_VERSION"
 
 if [ "$FORCE" = "true" ] || [ "$LATEST_VERSION" != "$LOCAL_VERSION" ]; then
